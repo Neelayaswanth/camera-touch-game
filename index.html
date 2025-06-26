@@ -173,8 +173,8 @@
     </div>
 
     <!-- TensorFlow.js and PoseNet -->
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection@2.1.0"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection@2.1.0/dist/pose-detection.js"></script>
 
     <script>
         class CameraGame {
@@ -258,17 +258,6 @@
                     this.toggleFullscreen();
                 });
                 
-                // Mouse control for fallback
-                this.canvas.addEventListener('mousemove', (e) => {
-                    if (this.gameRunning && !this.modelLoaded) {
-                        const rect = this.canvas.getBoundingClientRect();
-                        this.player.x = e.clientX - rect.left;
-                        this.player.y = e.clientY - rect.top;
-                        this.player.detected = true;
-                        this.player.confidence = 1.0;
-                    }
-                });
-                
                 // ESC key to quit
                 document.addEventListener('keydown', (e) => {
                     if (e.key === 'Escape') {
@@ -296,10 +285,16 @@
                 const startBtn = document.getElementById('startBtn');
                 
                 try {
+                    loadingStatus.textContent = 'Loading TensorFlow.js...';
+                    
+                    // Wait for TensorFlow to be ready
+                    await tf.ready();
+                    console.log('TensorFlow.js ready');
+                    
                     loadingStatus.textContent = 'Loading MoveNet pose detection...';
                     console.log('Loading MoveNet pose detection...');
                     
-                    // Use MoveNet (faster and more reliable than BlazePose)
+                    // Use MoveNet with simpler configuration
                     const model = poseDetection.SupportedModels.MoveNet;
                     const detectorConfig = {
                         modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING
@@ -315,15 +310,16 @@
                     console.log('MoveNet pose detection loaded successfully');
                     
                 } catch (error) {
-                    console.error('Error loading MoveNet, trying BlazePose:', error);
+                    console.error('Error loading MoveNet:', error);
                     loadingStatus.textContent = 'Loading BlazePose (fallback)...';
                     
                     try {
-                        // Fallback to BlazePose
+                        // Fallback to BlazePose with simpler config
                         const model = poseDetection.SupportedModels.BlazePose;
                         const detectorConfig = {
                             runtime: 'tfjs',
-                            modelType: 'lite'
+                            modelType: 'lite',
+                            enableSmoothing: true
                         };
                         
                         this.detector = await poseDetection.createDetector(model, detectorConfig);
@@ -337,15 +333,43 @@
                         
                     } catch (blazeError) {
                         console.error('Error loading BlazePose:', blazeError);
-                        loadingStatus.textContent = '⚠️ Model loading failed. You can still play with mouse control.';
-                        loadingStatus.style.color = '#ffaa00';
-                        startBtn.disabled = false;
-                        this.modelLoaded = false;
+                        
+                        // Try one more time with different config
+                        try {
+                            loadingStatus.textContent = 'Trying alternative model configuration...';
+                            
+                            const model = poseDetection.SupportedModels.BlazePose;
+                            const detectorConfig = {
+                                runtime: 'tfjs',
+                                modelType: 'full'
+                            };
+                            
+                            this.detector = await poseDetection.createDetector(model, detectorConfig);
+                            this.modelLoaded = true;
+                            
+                            loadingStatus.textContent = '✅ Pose detection model loaded successfully! (BlazePose Full)';
+                            loadingStatus.style.color = '#00ff00';
+                            startBtn.disabled = false;
+                            
+                            console.log('BlazePose Full pose detection loaded successfully');
+                            
+                        } catch (finalError) {
+                            console.error('All pose detection models failed:', finalError);
+                            loadingStatus.textContent = '❌ Pose detection failed. Please refresh and try again.';
+                            loadingStatus.style.color = '#ff0000';
+                            startBtn.disabled = true;
+                            this.modelLoaded = false;
+                        }
                     }
                 }
             }
             
             async startGame() {
+                if (!this.modelLoaded) {
+                    alert('Pose detection model is not loaded. Please wait for it to load completely or refresh the page.');
+                    return;
+                }
+                
                 try {
                     // Get camera access
                     const stream = await navigator.mediaDevices.getUserMedia({ 
@@ -364,14 +388,9 @@
                     this.ui.classList.remove('hidden');
                     this.instructions.classList.remove('hidden');
                     
-                    // Show appropriate instructions
-                    if (this.modelLoaded) {
-                        document.getElementById('cameraInstructions').style.display = 'block';
-                        document.getElementById('mouseInstructions').style.display = 'none';
-                    } else {
-                        document.getElementById('cameraInstructions').style.display = 'none';
-                        document.getElementById('mouseInstructions').style.display = 'block';
-                    }
+                    // Show camera instructions
+                    document.getElementById('cameraInstructions').style.display = 'block';
+                    document.getElementById('mouseInstructions').style.display = 'none';
                     
                     // Initialize game
                     this.gameRunning = true;
@@ -436,7 +455,7 @@
             
             async detectPose() {
                 if (!this.detector || !this.video.videoWidth) {
-                    // If no detector available, rely on mouse control
+                    console.log('No detector or video not ready');
                     return;
                 }
                 
@@ -445,10 +464,11 @@
                     
                     if (poses.length > 0) {
                         const pose = poses[0];
+                        console.log('Pose detected:', pose);
                         
                         if (pose.keypoints) {
                             // Try multiple keypoints for better detection
-                            const keypoints = ['nose', 'left_ear', 'right_ear', 'left_eye', 'right_eye'];
+                            const keypoints = ['nose', 'left_ear', 'right_ear', 'left_eye', 'right_eye', 'left_shoulder', 'right_shoulder'];
                             let bestKeypoint = null;
                             let bestScore = 0;
                             
@@ -460,7 +480,7 @@
                                 }
                             }
                             
-                            if (bestKeypoint && bestKeypoint.score > 0.3) {
+                            if (bestKeypoint && bestKeypoint.score > 0.2) {
                                 // Scale coordinates to canvas size
                                 const scaleX = this.canvas.width / this.video.videoWidth;
                                 const scaleY = this.canvas.height / this.video.videoHeight;
@@ -469,12 +489,16 @@
                                 this.player.y = bestKeypoint.y * scaleY;
                                 this.player.detected = true;
                                 this.player.confidence = bestKeypoint.score;
+                                
+                                console.log(`Detected ${bestKeypoint.name} at (${this.player.x}, ${this.player.y}) with confidence ${bestKeypoint.score}`);
                             } else {
                                 this.player.detected = false;
+                                console.log('No keypoint with sufficient confidence');
                             }
                         }
                     } else {
                         this.player.detected = false;
+                        console.log('No poses detected');
                     }
                 } catch (error) {
                     console.error('Error detecting pose:', error);
