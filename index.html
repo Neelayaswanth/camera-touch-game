@@ -129,6 +129,10 @@
             <h1>🎮 Camera Touch Game</h1>
             <h3>Select Your Settings</h3>
             
+            <div id="loadingStatus" style="color: #00ff00; margin: 10px 0;">
+                Loading pose detection model... Please wait.
+            </div>
+            
             <div>
                 <h4>Select Level:</h4>
                 <div class="menu-item" data-level="1">Level 1: Easy (Yellow Star)</div>
@@ -145,7 +149,7 @@
                 <div class="menu-item" data-size="small">Small (Hard)</div>
             </div>
             
-            <button id="startBtn">Start Game</button>
+            <button id="startBtn" disabled>Start Game</button>
             <button id="fullscreenBtn">Toggle Fullscreen</button>
         </div>
         
@@ -163,7 +167,8 @@
         </div>
         
         <div id="instructions" class="hidden">
-            Move your body to touch the star! Press ESC to quit.
+            <div id="cameraInstructions">Move your body to touch the star! Press ESC to quit.</div>
+            <div id="mouseInstructions" style="display: none;">Move your mouse to touch the star! Press ESC to quit.</div>
         </div>
     </div>
 
@@ -253,6 +258,17 @@
                     this.toggleFullscreen();
                 });
                 
+                // Mouse control for fallback
+                this.canvas.addEventListener('mousemove', (e) => {
+                    if (this.gameRunning && !this.modelLoaded) {
+                        const rect = this.canvas.getBoundingClientRect();
+                        this.player.x = e.clientX - rect.left;
+                        this.player.y = e.clientY - rect.top;
+                        this.player.detected = true;
+                        this.player.confidence = 1.0;
+                    }
+                });
+                
                 // ESC key to quit
                 document.addEventListener('keydown', (e) => {
                     if (e.key === 'Escape') {
@@ -276,7 +292,11 @@
             }
             
             async loadPoseDetection() {
+                const loadingStatus = document.getElementById('loadingStatus');
+                const startBtn = document.getElementById('startBtn');
+                
                 try {
+                    loadingStatus.textContent = 'Loading MoveNet pose detection...';
                     console.log('Loading MoveNet pose detection...');
                     
                     // Use MoveNet (faster and more reliable than BlazePose)
@@ -288,10 +308,15 @@
                     this.detector = await poseDetection.createDetector(model, detectorConfig);
                     this.modelLoaded = true;
                     
+                    loadingStatus.textContent = '✅ Pose detection model loaded successfully!';
+                    loadingStatus.style.color = '#00ff00';
+                    startBtn.disabled = false;
+                    
                     console.log('MoveNet pose detection loaded successfully');
                     
                 } catch (error) {
                     console.error('Error loading MoveNet, trying BlazePose:', error);
+                    loadingStatus.textContent = 'Loading BlazePose (fallback)...';
                     
                     try {
                         // Fallback to BlazePose
@@ -304,21 +329,23 @@
                         this.detector = await poseDetection.createDetector(model, detectorConfig);
                         this.modelLoaded = true;
                         
+                        loadingStatus.textContent = '✅ Pose detection model loaded successfully! (BlazePose)';
+                        loadingStatus.style.color = '#00ff00';
+                        startBtn.disabled = false;
+                        
                         console.log('BlazePose pose detection loaded successfully');
                         
                     } catch (blazeError) {
                         console.error('Error loading BlazePose:', blazeError);
-                        alert('Error loading pose detection models. Please refresh the page and try again.');
+                        loadingStatus.textContent = '⚠️ Model loading failed. You can still play with mouse control.';
+                        loadingStatus.style.color = '#ffaa00';
+                        startBtn.disabled = false;
+                        this.modelLoaded = false;
                     }
                 }
             }
             
             async startGame() {
-                if (!this.modelLoaded) {
-                    alert('Please wait for the pose detection model to load completely.');
-                    return;
-                }
-                
                 try {
                     // Get camera access
                     const stream = await navigator.mediaDevices.getUserMedia({ 
@@ -336,7 +363,15 @@
                     this.menu.classList.add('hidden');
                     this.ui.classList.remove('hidden');
                     this.instructions.classList.remove('hidden');
-                    this.debug.classList.remove('hidden');
+                    
+                    // Show appropriate instructions
+                    if (this.modelLoaded) {
+                        document.getElementById('cameraInstructions').style.display = 'block';
+                        document.getElementById('mouseInstructions').style.display = 'none';
+                    } else {
+                        document.getElementById('cameraInstructions').style.display = 'none';
+                        document.getElementById('mouseInstructions').style.display = 'block';
+                    }
                     
                     // Initialize game
                     this.gameRunning = true;
@@ -400,7 +435,10 @@
             }
             
             async detectPose() {
-                if (!this.detector || !this.video.videoWidth) return;
+                if (!this.detector || !this.video.videoWidth) {
+                    // If no detector available, rely on mouse control
+                    return;
+                }
                 
                 try {
                     const poses = await this.detector.estimatePoses(this.video);
