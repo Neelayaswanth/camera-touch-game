@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Camera Touch Game - Web Version</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+            background: #000;
+            color: white;
+            overflow: hidden;
+        }
+        
+        #gameContainer {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+        
+        #video {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        
+        #gameCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 10;
+        }
+        
+        #ui {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 20;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px;
+            border-radius: 10px;
+        }
+        
+        #menu {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.9);
+            padding: 30px;
+            border-radius: 15px;
+            text-align: center;
+            z-index: 30;
+        }
+        
+        .menu-item {
+            margin: 10px 0;
+            padding: 10px;
+            cursor: pointer;
+            border: 2px solid transparent;
+            border-radius: 5px;
+            transition: all 0.3s;
+        }
+        
+        .menu-item:hover {
+            border-color: #00ff00;
+            background: rgba(0, 255, 0, 0.1);
+        }
+        
+        .menu-item.selected {
+            border-color: #00ff00;
+            background: rgba(0, 255, 0, 0.2);
+        }
+        
+        button {
+            background: #00ff00;
+            color: black;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 5px;
+        }
+        
+        button:hover {
+            background: #00cc00;
+        }
+        
+        .hidden {
+            display: none;
+        }
+        
+        #instructions {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px;
+            border-radius: 5px;
+            z-index: 20;
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <video id="video" autoplay muted></video>
+        <canvas id="gameCanvas"></canvas>
+        
+        <div id="menu">
+            <h1>🎮 Camera Touch Game</h1>
+            <h3>Select Your Settings</h3>
+            
+            <div>
+                <h4>Select Level:</h4>
+                <div class="menu-item" data-level="1">Level 1: Easy (Yellow Star)</div>
+                <div class="menu-item" data-level="2">Level 2: Medium (Orange Star)</div>
+                <div class="menu-item" data-level="3">Level 3: Hard (Red Star)</div>
+                <div class="menu-item" data-level="4">Level 4: Very Hard (Purple Star)</div>
+                <div class="menu-item" data-level="5">Level 5: Expert (Cyan Star)</div>
+            </div>
+            
+            <div>
+                <h4>Star Size:</h4>
+                <div class="menu-item" data-size="large">Large (Easy)</div>
+                <div class="menu-item" data-size="medium">Medium (Normal)</div>
+                <div class="menu-item" data-size="small">Small (Hard)</div>
+            </div>
+            
+            <button id="startBtn">Start Game</button>
+            <button id="fullscreenBtn">Toggle Fullscreen</button>
+        </div>
+        
+        <div id="ui" class="hidden">
+            <div>Level: <span id="levelDisplay">1</span>/5</div>
+            <div>Time: <span id="timeDisplay">0.0</span>s</div>
+            <div>Speed: <span id="speedDisplay">2.0</span></div>
+            <div>Star Size: <span id="sizeDisplay">Medium</span></div>
+        </div>
+        
+        <div id="instructions" class="hidden">
+            Move your body to touch the star! Press ESC to quit.
+        </div>
+    </div>
+
+    <!-- TensorFlow.js and PoseNet -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection"></script>
+
+    <script>
+        class CameraGame {
+            constructor() {
+                this.video = document.getElementById('video');
+                this.canvas = document.getElementById('gameCanvas');
+                this.ctx = this.canvas.getContext('2d');
+                this.menu = document.getElementById('menu');
+                this.ui = document.getElementById('ui');
+                this.instructions = document.getElementById('instructions');
+                
+                this.gameRunning = false;
+                this.detector = null;
+                this.startTime = 0;
+                this.currentLevel = 1;
+                this.selectedSize = 'medium';
+                
+                this.levelConfigs = {
+                    1: { speed: 2, color: '#ffff00' }, // Yellow
+                    2: { speed: 3, color: '#ffa500' }, // Orange
+                    3: { speed: 4, color: '#ff0000' }, // Red
+                    4: { speed: 5, color: '#800080' }, // Purple
+                    5: { speed: 6, color: '#00ffff' }  // Cyan
+                };
+                
+                this.sizeConfigs = {
+                    'small': 15,
+                    'medium': 25,
+                    'large': 35
+                };
+                
+                this.star = {
+                    x: 100,
+                    y: 100,
+                    dx: 2,
+                    dy: 2,
+                    radius: 25,
+                    color: '#ffff00'
+                };
+                
+                this.player = {
+                    x: 0,
+                    y: 0,
+                    detected: false
+                };
+                
+                this.setupEventListeners();
+                this.setupCanvas();
+                this.loadPoseDetection();
+            }
+            
+            setupEventListeners() {
+                // Level selection
+                document.querySelectorAll('[data-level]').forEach(item => {
+                    item.addEventListener('click', (e) => {
+                        document.querySelectorAll('[data-level]').forEach(el => el.classList.remove('selected'));
+                        e.target.classList.add('selected');
+                        this.currentLevel = parseInt(e.target.dataset.level);
+                    });
+                });
+                
+                // Size selection
+                document.querySelectorAll('[data-size]').forEach(item => {
+                    item.addEventListener('click', (e) => {
+                        document.querySelectorAll('[data-size]').forEach(el => el.classList.remove('selected'));
+                        e.target.classList.add('selected');
+                        this.selectedSize = e.target.dataset.size;
+                    });
+                });
+                
+                // Start button
+                document.getElementById('startBtn').addEventListener('click', () => {
+                    this.startGame();
+                });
+                
+                // Fullscreen button
+                document.getElementById('fullscreenBtn').addEventListener('click', () => {
+                    this.toggleFullscreen();
+                });
+                
+                // ESC key to quit
+                document.addEventListener('keydown', (e) => {
+                    if (e.key === 'Escape') {
+                        this.quitGame();
+                    }
+                });
+                
+                // Set default selections
+                document.querySelector('[data-level="1"]').classList.add('selected');
+                document.querySelector('[data-size="medium"]').classList.add('selected');
+            }
+            
+            setupCanvas() {
+                this.canvas.width = window.innerWidth;
+                this.canvas.height = window.innerHeight;
+                
+                window.addEventListener('resize', () => {
+                    this.canvas.width = window.innerWidth;
+                    this.canvas.height = window.innerHeight;
+                });
+            }
+            
+            async loadPoseDetection() {
+                try {
+                    const model = poseDetection.SupportedModels.BlazePose;
+                    const detectorConfig = {
+                        runtime: 'tfjs',
+                        modelType: 'full'
+                    };
+                    this.detector = await poseDetection.createDetector(model, detectorConfig);
+                    console.log('Pose detection loaded successfully');
+                } catch (error) {
+                    console.error('Error loading pose detection:', error);
+                    alert('Error loading pose detection. Please refresh the page.');
+                }
+            }
+            
+            async startGame() {
+                try {
+                    // Get camera access
+                    const stream = await navigator.mediaDevices.getUserMedia({ 
+                        video: { 
+                            width: { ideal: 640 },
+                            height: { ideal: 480 }
+                        } 
+                    });
+                    
+                    this.video.srcObject = stream;
+                    await this.video.play();
+                    
+                    // Hide menu and show game
+                    this.menu.classList.add('hidden');
+                    this.ui.classList.remove('hidden');
+                    this.instructions.classList.remove('hidden');
+                    
+                    // Initialize game
+                    this.gameRunning = true;
+                    this.startTime = Date.now();
+                    this.updateStarConfig();
+                    this.resetStar();
+                    
+                    // Start game loop
+                    this.gameLoop();
+                    
+                } catch (error) {
+                    console.error('Error accessing camera:', error);
+                    alert('Error accessing camera. Please allow camera access and try again.');
+                }
+            }
+            
+            updateStarConfig() {
+                const config = this.levelConfigs[this.currentLevel];
+                this.star.color = config.color;
+                this.star.dx = config.speed;
+                this.star.dy = config.speed;
+                this.star.radius = this.sizeConfigs[this.selectedSize];
+                
+                // Update UI
+                document.getElementById('levelDisplay').textContent = this.currentLevel;
+                document.getElementById('speedDisplay').textContent = config.speed;
+                document.getElementById('sizeDisplay').textContent = this.selectedSize;
+            }
+            
+            resetStar() {
+                this.star.x = Math.random() * (this.canvas.width - 100) + 50;
+                this.star.y = Math.random() * (this.canvas.height - 100) + 50;
+                this.star.dx = (Math.random() > 0.5 ? 1 : -1) * this.star.dx;
+                this.star.dy = (Math.random() > 0.5 ? 1 : -1) * this.star.dy;
+            }
+            
+            async gameLoop() {
+                if (!this.gameRunning) return;
+                
+                // Update time
+                const elapsed = (Date.now() - this.startTime) / 1000;
+                document.getElementById('timeDisplay').textContent = elapsed.toFixed(1);
+                
+                // Detect pose
+                await this.detectPose();
+                
+                // Update star position
+                this.updateStar();
+                
+                // Check collision
+                if (this.checkCollision()) {
+                    this.levelComplete();
+                    return;
+                }
+                
+                // Draw everything
+                this.draw();
+                
+                // Continue loop
+                requestAnimationFrame(() => this.gameLoop());
+            }
+            
+            async detectPose() {
+                if (!this.detector) return;
+                
+                try {
+                    const poses = await this.detector.estimatePoses(this.video);
+                    if (poses.length > 0) {
+                        const pose = poses[0];
+                        if (pose.keypoints) {
+                            // Use nose position
+                            const nose = pose.keypoints.find(kp => kp.name === 'nose');
+                            if (nose && nose.score > 0.5) {
+                                this.player.x = nose.x;
+                                this.player.y = nose.y;
+                                this.player.detected = true;
+                            }
+                        }
+                    }
+                } catch (error) {
+                    console.error('Error detecting pose:', error);
+                }
+            }
+            
+            updateStar() {
+                this.star.x += this.star.dx;
+                this.star.y += this.star.dy;
+                
+                // Bounce off walls
+                if (this.star.x <= this.star.radius || this.star.x >= this.canvas.width - this.star.radius) {
+                    this.star.dx *= -1;
+                    this.star.x = Math.max(this.star.radius, Math.min(this.canvas.width - this.star.radius, this.star.x));
+                }
+                
+                if (this.star.y <= this.star.radius || this.star.y >= this.canvas.height - this.star.radius) {
+                    this.star.dy *= -1;
+                    this.star.y = Math.max(this.star.radius, Math.min(this.canvas.height - this.star.radius, this.star.y));
+                }
+            }
+            
+            checkCollision() {
+                if (!this.player.detected) return false;
+                
+                const distance = Math.sqrt(
+                    Math.pow(this.player.x - this.star.x, 2) + 
+                    Math.pow(this.player.y - this.star.y, 2)
+                );
+                
+                return distance < (this.star.radius + 30);
+            }
+            
+            levelComplete() {
+                this.gameRunning = false;
+                
+                if (this.currentLevel < 5) {
+                    // Next level
+                    this.currentLevel++;
+                    this.updateStarConfig();
+                    this.resetStar();
+                    this.startTime = Date.now();
+                    this.gameRunning = true;
+                    this.gameLoop();
+                } else {
+                    // Game complete
+                    this.showGameComplete();
+                }
+            }
+            
+            showGameComplete() {
+                const elapsed = (Date.now() - this.startTime) / 1000;
+                alert(`🎉 GAME COMPLETE!\n\nTotal Time: ${elapsed.toFixed(1)} seconds\n\nCongratulations! You beat all levels!`);
+                this.quitGame();
+            }
+            
+            quitGame() {
+                this.gameRunning = false;
+                this.menu.classList.remove('hidden');
+                this.ui.classList.add('hidden');
+                this.instructions.classList.add('hidden');
+                
+                // Stop camera
+                if (this.video.srcObject) {
+                    this.video.srcObject.getTracks().forEach(track => track.stop());
+                }
+                
+                // Clear canvas
+                this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+            }
+            
+            draw() {
+                // Clear canvas
+                this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+                
+                // Draw star
+                this.drawStar(this.star.x, this.star.y, this.star.radius, this.star.color);
+                
+                // Draw player
+                if (this.player.detected) {
+                    this.ctx.beginPath();
+                    this.ctx.arc(this.player.x, this.player.y, 10, 0, 2 * Math.PI);
+                    this.ctx.strokeStyle = '#00ff00';
+                    this.ctx.lineWidth = 3;
+                    this.ctx.stroke();
+                    
+                    // Draw collision area
+                    this.ctx.beginPath();
+                    this.ctx.arc(this.player.x, this.player.y, 30, 0, 2 * Math.PI);
+                    this.ctx.strokeStyle = '#00ff00';
+                    this.ctx.lineWidth = 1;
+                    this.ctx.stroke();
+                }
+            }
+            
+            drawStar(x, y, radius, color) {
+                this.ctx.fillStyle = color;
+                this.ctx.beginPath();
+                
+                for (let i = 0; i < 10; i++) {
+                    const angle = i * Math.PI / 5;
+                    const r = i % 2 === 0 ? radius : radius * 0.5;
+                    const px = x + r * Math.cos(angle);
+                    const py = y + r * Math.sin(angle);
+                    
+                    if (i === 0) {
+                        this.ctx.moveTo(px, py);
+                    } else {
+                        this.ctx.lineTo(px, py);
+                    }
+                }
+                
+                this.ctx.closePath();
+                this.ctx.fill();
+            }
+            
+            toggleFullscreen() {
+                if (!document.fullscreenElement) {
+                    document.documentElement.requestFullscreen();
+                } else {
+                    document.exitFullscreen();
+                }
+            }
+        }
+        
+        // Initialize game when page loads
+        window.addEventListener('load', () => {
+            new CameraGame();
+        });
+    </script>
+</body>
+</html> 

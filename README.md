@@ -2,6 +2,8 @@
 
 A fun camera-based game where you need to touch a moving object with your body using your webcam! The game displays your camera feed with game objects overlaid on top, creating an augmented reality experience. Complete 5 increasingly difficult levels with customizable settings!
 
+**🌐 [Play Online (Web Version)](https://yashroygame.netlify.app)** - No installation required!
+
 ## Features
 
 - **Level Selection Menu** - Choose your starting level and star size before playing
@@ -15,6 +17,22 @@ A fun camera-based game where you need to touch a moving object with your body u
 - **Timer** showing how long it takes to complete each level
 - **Visual feedback** showing your movement trail
 - **Augmented reality experience** - see yourself and game objects together
+- **Fullscreen mode** support
+- **Web version** available for instant play
+
+## Play Options
+
+### 🌐 Web Version (Recommended)
+- **No installation required**
+- **Works in any modern browser**
+- **Instant play**: [https://yashroygame.netlify.app](https://yashroygame.netlify.app)
+- **Uses TensorFlow.js** for pose detection
+- **Mobile-friendly** (with camera access)
+
+### 💻 Desktop Version
+- **Full features** with Pygame
+- **Better performance** and graphics
+- **Requires Python installation**
 
 ## Level System
 
@@ -33,13 +51,26 @@ A fun camera-based game where you need to touch a moving object with your body u
 
 ## Requirements
 
+### Web Version:
+- Modern web browser (Chrome, Firefox, Safari, Edge)
+- Camera access permission
+- Internet connection (for TensorFlow.js)
+
+### Desktop Version:
 - Python 3.7 or higher
 - Webcam
 - Good lighting for pose detection
 
 ## Installation
 
-### Step 1: Install Python Dependencies
+### Web Version:
+1. **Visit**: [https://yashroygame.netlify.app](https://yashroygame.netlify.app)
+2. **Allow camera access** when prompted
+3. **Start playing immediately!**
+
+### Desktop Version:
+
+#### Step 1: Install Python Dependencies
 
 Install the required packages:
 
@@ -52,7 +83,7 @@ Or install from requirements file:
 pip install -r requirements.txt
 ```
 
-### Step 2: Run the Game
+#### Step 2: Run the Game
 
 ```bash
 python camera_game_levels.py
@@ -60,13 +91,22 @@ python camera_game_levels.py
 
 ## How to Play
 
-### Level Selection Menu:
+### Web Version:
+1. **Visit the website** and allow camera access
+2. **Select your starting level** and star size
+3. **Click "Start Game"** to begin
+4. **Move your body** to touch the star
+5. **Complete all 5 levels** to win!
+
+### Desktop Version:
+
+#### Level Selection Menu:
 1. **Start the game** by running `python camera_game_levels.py`
 2. **Select your starting level** using UP/DOWN arrow keys
 3. **Choose star size** using LEFT/RIGHT arrow keys
 4. **Press ENTER** to start the game
 
-### Gameplay:
+#### Gameplay:
 1. **Stand in front of your webcam** with good lighting
 2. **Move your body** to control your on-screen position
 3. **Touch the colored star** that's bouncing around the screen
@@ -77,16 +117,24 @@ python camera_game_levels.py
 
 ## Game Controls
 
-### Menu Controls:
+### Web Version:
+- **Mouse** - Click to select options
+- **Fullscreen button** - Toggle fullscreen mode
+- **ESC** - Quit game
+
+### Desktop Version:
+
+#### Menu Controls:
 - **UP/DOWN arrows** - Select starting level
 - **LEFT/RIGHT arrows** - Select star size
 - **ENTER** - Start game
 - **ESC** - Quit
 
-### Game Controls:
+#### Game Controls:
 - **Move your body** - Control your on-screen position
 - **SPACE** - Continue to next level or restart game
 - **ESC** - Quit the game
+- **F11** - Toggle fullscreen mode
 
 ## Tips for Better Performance
 
@@ -96,9 +144,18 @@ python camera_game_levels.py
 - Make sure your full body is visible in the camera frame
 - Close other applications that might be using the camera
 - Choose a star size that matches your skill level
+- Use a modern browser for the web version
 
 ## Technical Details
 
+### Web Version:
+- **HTML5 Canvas** for graphics rendering
+- **TensorFlow.js** for real-time pose estimation
+- **WebRTC** for camera access
+- **JavaScript** for game logic
+- **Responsive design** for different screen sizes
+
+### Desktop Version:
 - Uses **MediaPipe** for real-time pose estimation
 - **OpenCV** for webcam capture and image processing
 - **Pygame** for game rendering and collision detection
@@ -107,19 +164,36 @@ python camera_game_levels.py
 - **Level progression system** with configurable difficulty
 - **Customizable star sizes** for different skill levels
 
+## Deployment
+
+### Web Version (Netlify):
+- **Live URL**: https://yashroygame.netlify.app
+- **Automatic deployment** from GitHub
+- **No server required** - static hosting
+
+### Desktop Version:
+- **GitHub Releases** for executable distribution
+- **Build script** included (`build_exe.py`)
+- **Cross-platform** support
+
 ## Troubleshooting
 
-### Camera Issues
+### Web Version:
+- **Camera not working**: Check browser permissions and refresh
+- **Slow performance**: Close other tabs and applications
+- **Not detecting pose**: Ensure good lighting and full body visibility
+
+### Desktop Version:
 - **Camera not detected**: Make sure your webcam is connected and not being used by another application
 - **Poor tracking**: Improve lighting and ensure your full body is visible
 - **Performance issues**: Close other applications that might be using the camera
 
-### Installation Issues
+### Installation Issues:
 - **Python version error**: Make sure you have Python 3.7 or higher installed
 - **Package installation fails**: Try running `pip install --upgrade pip` first
 - **MediaPipe issues**: Make sure you have a compatible Python version
 
-### Game Performance
+### Game Performance:
 - **Low frame rate**: Reduce the camera resolution or close other applications
 - **Tracking lag**: Ensure good lighting and stand closer to the camera
 - **Game crashes**: Check that all dependencies are properly installed
@@ -127,9 +201,12 @@ python camera_game_levels.py
 ## File Structure
 
 ```
-├── camera_game_levels.py    # Main game file (5-level system with menu)
-├── requirements.txt         # Python dependencies
-└── README.md               # This file
+├── index.html              # Web version (Netlify deployment)
+├── netlify.toml            # Netlify configuration
+├── camera_game_levels.py   # Desktop version (Python)
+├── build_exe.py           # Build script for executable
+├── requirements.txt       # Python dependencies
+└── README.md             # This file
 ```
 
 ## Game Features
@@ -144,6 +221,7 @@ python camera_game_levels.py
 - **Collision detection**: Touch the star to complete each level
 - **Timer**: Track how long it takes to complete each level
 - **Level completion screens**: See your progress and time for each level
+- **Cross-platform**: Works on web and desktop
 
 ## Level Completion
 
@@ -159,5 +237,17 @@ python camera_game_levels.py
 - **Star Size**: Choose from 4 different sizes
 - **Difficulty Scaling**: Speed increases with each level
 - **Visual Preferences**: Different colored stars per level
+
+## Contributing
+
+Feel free to contribute to this project by:
+- Reporting bugs
+- Suggesting new features
+- Improving the web version
+- Adding new levels or game modes
+
+## License
+
+This project is open source and available under the MIT License.
 
 Enjoy the game! 🎮 
