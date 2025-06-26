@@ -107,6 +107,17 @@
             border-radius: 5px;
             z-index: 20;
         }
+        
+        #debug {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px;
+            border-radius: 5px;
+            z-index: 20;
+            font-size: 12px;
+        }
     </style>
 </head>
 <body>
@@ -145,14 +156,20 @@
             <div>Star Size: <span id="sizeDisplay">Medium</span></div>
         </div>
         
+        <div id="debug" class="hidden">
+            <div>Status: <span id="statusDisplay">Loading...</span></div>
+            <div>Detected: <span id="detectedDisplay">No</span></div>
+            <div>Position: <span id="positionDisplay">0, 0</span></div>
+        </div>
+        
         <div id="instructions" class="hidden">
             Move your body to touch the star! Press ESC to quit.
         </div>
     </div>
 
     <!-- TensorFlow.js and PoseNet -->
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection@2.1.0"></script>
 
     <script>
         class CameraGame {
@@ -163,12 +180,14 @@
                 this.menu = document.getElementById('menu');
                 this.ui = document.getElementById('ui');
                 this.instructions = document.getElementById('instructions');
+                this.debug = document.getElementById('debug');
                 
                 this.gameRunning = false;
                 this.detector = null;
                 this.startTime = 0;
                 this.currentLevel = 1;
                 this.selectedSize = 'medium';
+                this.modelLoaded = false;
                 
                 this.levelConfigs = {
                     1: { speed: 2, color: '#ffff00' }, // Yellow
@@ -196,7 +215,8 @@
                 this.player = {
                     x: 0,
                     y: 0,
-                    detected: false
+                    detected: false,
+                    confidence: 0
                 };
                 
                 this.setupEventListeners();
@@ -257,26 +277,55 @@
             
             async loadPoseDetection() {
                 try {
-                    const model = poseDetection.SupportedModels.BlazePose;
+                    console.log('Loading MoveNet pose detection...');
+                    
+                    // Use MoveNet (faster and more reliable than BlazePose)
+                    const model = poseDetection.SupportedModels.MoveNet;
                     const detectorConfig = {
-                        runtime: 'tfjs',
-                        modelType: 'full'
+                        modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING
                     };
+                    
                     this.detector = await poseDetection.createDetector(model, detectorConfig);
-                    console.log('Pose detection loaded successfully');
+                    this.modelLoaded = true;
+                    
+                    console.log('MoveNet pose detection loaded successfully');
+                    
                 } catch (error) {
-                    console.error('Error loading pose detection:', error);
-                    alert('Error loading pose detection. Please refresh the page.');
+                    console.error('Error loading MoveNet, trying BlazePose:', error);
+                    
+                    try {
+                        // Fallback to BlazePose
+                        const model = poseDetection.SupportedModels.BlazePose;
+                        const detectorConfig = {
+                            runtime: 'tfjs',
+                            modelType: 'lite'
+                        };
+                        
+                        this.detector = await poseDetection.createDetector(model, detectorConfig);
+                        this.modelLoaded = true;
+                        
+                        console.log('BlazePose pose detection loaded successfully');
+                        
+                    } catch (blazeError) {
+                        console.error('Error loading BlazePose:', blazeError);
+                        alert('Error loading pose detection models. Please refresh the page and try again.');
+                    }
                 }
             }
             
             async startGame() {
+                if (!this.modelLoaded) {
+                    alert('Please wait for the pose detection model to load completely.');
+                    return;
+                }
+                
                 try {
                     // Get camera access
                     const stream = await navigator.mediaDevices.getUserMedia({ 
                         video: { 
                             width: { ideal: 640 },
-                            height: { ideal: 480 }
+                            height: { ideal: 480 },
+                            facingMode: 'user'
                         } 
                     });
                     
@@ -287,6 +336,7 @@
                     this.menu.classList.add('hidden');
                     this.ui.classList.remove('hidden');
                     this.instructions.classList.remove('hidden');
+                    this.debug.classList.remove('hidden');
                     
                     // Initialize game
                     this.gameRunning = true;
@@ -350,24 +400,47 @@
             }
             
             async detectPose() {
-                if (!this.detector) return;
+                if (!this.detector || !this.video.videoWidth) return;
                 
                 try {
                     const poses = await this.detector.estimatePoses(this.video);
+                    
                     if (poses.length > 0) {
                         const pose = poses[0];
+                        
                         if (pose.keypoints) {
-                            // Use nose position
-                            const nose = pose.keypoints.find(kp => kp.name === 'nose');
-                            if (nose && nose.score > 0.5) {
-                                this.player.x = nose.x;
-                                this.player.y = nose.y;
+                            // Try multiple keypoints for better detection
+                            const keypoints = ['nose', 'left_ear', 'right_ear', 'left_eye', 'right_eye'];
+                            let bestKeypoint = null;
+                            let bestScore = 0;
+                            
+                            for (const keypointName of keypoints) {
+                                const keypoint = pose.keypoints.find(kp => kp.name === keypointName);
+                                if (keypoint && keypoint.score > bestScore) {
+                                    bestKeypoint = keypoint;
+                                    bestScore = keypoint.score;
+                                }
+                            }
+                            
+                            if (bestKeypoint && bestKeypoint.score > 0.3) {
+                                // Scale coordinates to canvas size
+                                const scaleX = this.canvas.width / this.video.videoWidth;
+                                const scaleY = this.canvas.height / this.video.videoHeight;
+                                
+                                this.player.x = bestKeypoint.x * scaleX;
+                                this.player.y = bestKeypoint.y * scaleY;
                                 this.player.detected = true;
+                                this.player.confidence = bestKeypoint.score;
+                            } else {
+                                this.player.detected = false;
                             }
                         }
+                    } else {
+                        this.player.detected = false;
                     }
                 } catch (error) {
                     console.error('Error detecting pose:', error);
+                    this.player.detected = false;
                 }
             }
             
@@ -388,14 +461,16 @@
             }
             
             checkCollision() {
-                if (!this.player.detected) return false;
+                if (!this.player.detected || this.player.confidence < 0.3) return false;
                 
                 const distance = Math.sqrt(
                     Math.pow(this.player.x - this.star.x, 2) + 
                     Math.pow(this.player.y - this.star.y, 2)
                 );
                 
-                return distance < (this.star.radius + 30);
+                // Larger collision area for better detection
+                const collisionRadius = this.star.radius + 50;
+                return distance < collisionRadius;
             }
             
             levelComplete() {
@@ -426,6 +501,7 @@
                 this.menu.classList.remove('hidden');
                 this.ui.classList.add('hidden');
                 this.instructions.classList.add('hidden');
+                this.debug.classList.add('hidden');
                 
                 // Stop camera
                 if (this.video.srcObject) {
@@ -445,17 +521,20 @@
                 
                 // Draw player
                 if (this.player.detected) {
+                    // Draw player position
                     this.ctx.beginPath();
-                    this.ctx.arc(this.player.x, this.player.y, 10, 0, 2 * Math.PI);
+                    this.ctx.arc(this.player.x, this.player.y, 15, 0, 2 * Math.PI);
+                    this.ctx.fillStyle = 'rgba(0, 255, 0, 0.3)';
+                    this.ctx.fill();
                     this.ctx.strokeStyle = '#00ff00';
                     this.ctx.lineWidth = 3;
                     this.ctx.stroke();
                     
                     // Draw collision area
                     this.ctx.beginPath();
-                    this.ctx.arc(this.player.x, this.player.y, 30, 0, 2 * Math.PI);
-                    this.ctx.strokeStyle = '#00ff00';
-                    this.ctx.lineWidth = 1;
+                    this.ctx.arc(this.player.x, this.player.y, 50, 0, 2 * Math.PI);
+                    this.ctx.strokeStyle = 'rgba(0, 255, 0, 0.5)';
+                    this.ctx.lineWidth = 2;
                     this.ctx.stroke();
                 }
             }
@@ -479,6 +558,12 @@
                 
                 this.ctx.closePath();
                 this.ctx.fill();
+                
+                // Add glow effect
+                this.ctx.shadowColor = color;
+                this.ctx.shadowBlur = 10;
+                this.ctx.fill();
+                this.ctx.shadowBlur = 0;
             }
             
             toggleFullscreen() {
